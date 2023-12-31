@@ -8,12 +8,13 @@ logging.basicConfig(\
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 #from num_token import calc_token_tiktoken
-
+from pprint import pprint, pformat
 import openai
 import os
 import streamlit as st
 from typing import Any, List
 import tiktoken
+use_past_data = st.sidebar.checkbox('過去のデータを使う', value=False)
 
 def calc_token_tiktoken(chat: str, encoding_name: str = "",
                         model_name: str = "gpt-3.5-turbo-0301") -> int:
@@ -33,7 +34,7 @@ def calc_token_tiktoken(chat: str, encoding_name: str = "",
 openai.api_key = os.environ['OPENAI_API_KEY']
 
 # 過去の最大トークン数
-PAST_INPUT_MAX_TOKENS = 1024
+PAST_INPUT_MAX_TOKENS = 20
 
 st.title("StreamlitのChatGPTサンプル")
 
@@ -87,23 +88,40 @@ def response_chatgpt(user_msg: str, past_msgs: List[dict] = [], model_name : str
 
 
 #%%
+
 with st.chat_message(ASSISTANT_NAME):
-        st.write(ASSISTANT_WARNING)
+    st.write(ASSISTANT_WARNING)
 
-# チャットログを保存したセッション情報を初期化
-if "chat_log" not in st.session_state:
+# Streamlitアプリの開始時にセッション状態を初期化
+if "initialized" not in st.session_state:
     st.session_state.chat_log = []
-    #st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": ASSISTANT_WARNING})
+    st.session_state.initialized = True
 
-user_msg = st.chat_input("ここにメッセージを入力")
+# 以前のチャットログを表示
+for chat in st.session_state.chat_log:
+    with st.chat_message(chat["name"]):
+        st.write(chat["msg"])
+user_msg = st.text_input("ここにメッセージを入力")
+# 処理開始
 if user_msg:
     # 以前のチャットログを表示
-    for chat in st.session_state.chat_log:
-        with st.chat_message(chat["name"]):
-            st.write(chat["msg"])
-    user_msg_tokens = calc_token_tiktoken(user_msg)
+    #for chat in st.session_state.chat_log:
+    #    with st.chat_message(chat["name"]):
+    #        st.write(chat["msg"])
+    user_msg_tokens = calc_token_tiktoken(str(
+        [
+            {
+                'role' : 'user', 'content' : user_msg
+            }
+        ]
+        ))
+    logging.info(f'入力したトークン数 : {user_msg_tokens}')
     if user_msg_tokens > PAST_INPUT_MAX_TOKENS:
-        st.warning("メッセージが長すぎます。短くしてください。")
+        st.text_area("入力されたメッセージ", user_msg, height=100)  # メッセージを再表示
+        st.warning("メッセージが長すぎます。短くしてください。"
+                   f"({user_msg_tokens}tokens)")
+        # 処理終了
+        #st.session_state.processing = False
     else:
         # 最新のメッセージを表示
         with st.chat_message(USER_NAME):
@@ -127,7 +145,7 @@ if user_msg:
         st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": assistant_msg})
 
         logging.info(f"チャットログ: {st.session_state.chat_log}")
-    
-    
+        logging.info(f'use_past_data : {use_past_data}')
+        # 処理終了
     
 #%%
