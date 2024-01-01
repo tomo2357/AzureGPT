@@ -6,12 +6,10 @@ logging.basicConfig(
    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 from copy import copy
-from typing import Any, List, TypeGuard
-
-import openai
-import os
-import streamlit as st
 from typing import Any, List
+
+import openai, os
+import streamlit as st
 import tiktoken
 
 def calc_token_tiktoken(chat: str, encoding_name: str = "",
@@ -153,9 +151,12 @@ if user_msg:
             st.write(user_msg)
 
         # アシスタントのメッセージを表示
-        past_msgs = [{"role": chat["name"],
-                      "content": chat["msg"]} \
-            for chat in st.session_state.chat_log]
+        if use_past_data:
+            past_msgs = [{"role": chat["name"],
+                        "content": chat["msg"]} \
+                for chat in st.session_state.chat_log]
+        else:
+            past_msg = []
         # セッションにチャットログを追加
         st.session_state.chat_log.append({"name": USER_NAME, "msg": user_msg})
         st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": ""})
