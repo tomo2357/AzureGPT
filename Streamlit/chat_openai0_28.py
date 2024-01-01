@@ -1,20 +1,18 @@
 #%%
-from copy import copy
 import logging
+
+logging.basicConfig(
+   level=logging.DEBUG,
+   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+from copy import copy
 from typing import Any, List, TypeGuard
 
-logging.basicConfig(\
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-#from num_token import calc_token_tiktoken
-from pprint import pprint, pformat
 import openai
 import os
 import streamlit as st
 from typing import Any, List
 import tiktoken
-use_past_data = st.sidebar.checkbox('過去のデータを使う', value=False)
 
 def calc_token_tiktoken(chat: str, encoding_name: str = "",
                         model_name: str = "gpt-3.5-turbo-0301") -> int:
@@ -34,7 +32,8 @@ def calc_token_tiktoken(chat: str, encoding_name: str = "",
 openai.api_key = os.environ['OPENAI_API_KEY']
 
 # 過去の最大トークン数
-PAST_INPUT_MAX_TOKENS = 20
+#PAST_INPUT_MAX_TOKENS = 20
+PAST_INPUT_MAX_TOKENS = 1024
 
 st.title("StreamlitのChatGPTサンプル")
 
@@ -44,18 +43,31 @@ ASSISTANT_NAME = "assistant"
 ASSISTANT_WARNING = '注意：私はAIチャットボットで、情報が常に最新または正確であるとは限りません。重要な決定をする前には、他の信頼できる情報源を確認してください。'
 
 def trim_tokens(messages: List[dict], max_tokens: int,
-                model_name : str = 'gpt-3.5-turbo-0301')\
-                    -> List[dict]:
-    total_tokens = calc_token_tiktoken(str(messages),
-                                       model_name=model_name)
-    while total_tokens > max_tokens:
-        messages.pop(0)
-        total_tokens = \
-            calc_token_tiktoken(str(messages), 
-                                model_name=model_name)
+              model_name: str = 'gpt-3.5-turbo-0301') -> List[dict]:
+   """
+   メッセージのトークン数が指定した最大トークン数を超える場合、
+   メッセージの先頭から順に削除し、トークン数を最大トークン数以下に保つ。
 
-            
-    return messages
+   引数:
+       messages (List[dict]): メッセージのリスト。
+       max_tokens (int): 最大トークン数。
+       model_name (str): モデル名（デフォルトは'gpt-3.5-turbo-0301'）。
+
+   戻り値:
+       List[dict]: トークン数が最大トークン数以下になったメッセージのリスト。
+   """
+   # 無限ループを開始
+   while True:
+       # 現在のメッセージのトークン数を計算
+       total_tokens = calc_token_tiktoken(str(messages), model_name=model_name)
+       # トークン数が最大トークン数以下になった場合、ループを終了
+       if total_tokens <= max_tokens:
+           break
+       # トークン数が最大トークン数を超えている場合、メッセージの先頭を削除
+       messages.pop(0)
+
+   # 修正されたメッセージのリストを返す
+   return messages
 
 
 def response_chatgpt(user_msg: str, past_msgs: List[dict] = [], model_name : str = "gpt-3.5-turbo") -> Any:
@@ -70,16 +82,16 @@ def response_chatgpt(user_msg: str, past_msgs: List[dict] = [], model_name : str
     戻り値:
         response: ChatGPTからのレスポンス。
     """
-    #logging.info(type(user_msg))
+    #logging.debug(type(user_msg))
     messages = copy(past_msgs)
     messages.append({"role": "user", "content": user_msg})
-    logging.info(f"trim_tokens前のmessages: {messages}")
-    logging.info(f"trim_tokens前のmessagesのトークン数: {calc_token_tiktoken(str(messages))}")
-    #logging.info(f"trim_tokens前のmessages_type: {type(messages)}")
+    logging.debug(f"trim_tokens前のmessages: {messages}")
+    logging.debug(f"trim_tokens前のmessagesのトークン数: {calc_token_tiktoken(str(messages))}")
+    #logging.debug(f"trim_tokens前のmessages_type: {type(messages)}")
     
     messages = trim_tokens(messages, PAST_INPUT_MAX_TOKENS)
-    logging.info(f"trim_tokens後のmessages: {str(messages)}")
-    logging.info(f"trim_tokens後のmessagesのトークン数: {calc_token_tiktoken(str(messages))}")
+    logging.debug(f"trim_tokens後のmessages: {str(messages)}")
+    logging.debug(f"trim_tokens後のmessagesのトークン数: {calc_token_tiktoken(str(messages))}")
     response = openai.ChatCompletion.create(
         model=model_name,
         messages=messages,
@@ -89,6 +101,19 @@ def response_chatgpt(user_msg: str, past_msgs: List[dict] = [], model_name : str
 
 #%%
 
+# 利用可能なGPTモデルのリスト
+available_models = ["gpt-3.5-turbo", "gpt-4", "gpt-3.5-turbo-0301", "その他のモデル"]
+
+# Streamlitサイドバーにモデル選択のドロップダウンを追加
+model_choice = st.sidebar.selectbox(
+    "GPTモデルを選択してください",
+    available_models,
+    index=0  # デフォルトの選択肢
+)
+use_past_data = st.sidebar.checkbox(
+    '２つ前以上の会話データを使う', value=True
+    )
+# アシスタントからの警告を載せる
 with st.chat_message(ASSISTANT_NAME):
     st.write(ASSISTANT_WARNING)
 
@@ -115,7 +140,7 @@ if user_msg:
             }
         ]
         ))
-    logging.info(f'入力したトークン数 : {user_msg_tokens}')
+    logging.debug(f'入力したトークン数 : {user_msg_tokens}')
     if user_msg_tokens > PAST_INPUT_MAX_TOKENS:
         st.text_area("入力されたメッセージ", user_msg, height=100)  # メッセージを再表示
         st.warning("メッセージが長すぎます。短くしてください。"
@@ -148,8 +173,10 @@ if user_msg:
         #st.session_state.chat_log.append({"name": USER_NAME, "msg": user_msg})
         #st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": assistant_msg})
 
-        logging.info(f"チャットログ: {st.session_state.chat_log}")
-        logging.info(f'use_past_data : {use_past_data}')
+        logging.debug(f"チャットログ: {st.session_state.chat_log}")
+        logging.debug(f'use_past_data : {use_past_data}')
+        #logging.debug(f'use_past_data : {use_past_data}')
+        
         # 処理終了
     
 #%%
