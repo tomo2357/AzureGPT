@@ -113,7 +113,7 @@ def response_chatgpt(
 model_choice = st.sidebar.selectbox(
     "GPTモデルを選択してください", available_models, index=0  # デフォルトの選択肢
 )
-use_past_data = st.sidebar.checkbox("２つ前以上の会話データを使う", value=True)
+use_past_data = st.sidebar.checkbox("前の会話も考慮する", value=True)
 # アシスタントからの警告を載せる
 with st.chat_message(ASSISTANT_NAME):
     st.write(ASSISTANT_WARNING)
@@ -133,45 +133,50 @@ user_msg = st.chat_input("ここにメッセージを入力")
 
 # 処理開始
 if user_msg:
-    user_msg_tokens = calc_token_tiktoken(str([{"role": "user", "content": user_msg}]))
-    if user_msg:
+    # 最新のメッセージを表示
+    with st.chat_message(USER_NAME):
+        st.write(user_msg)
+
+    # 過去のメッセージを使用するかどうかの条件に基づいて、過去のメッセージのリストを作成
+    if use_past_data:
+        past_msgs = [
+            {"role": chat["name"], "content": chat["msg"]}
+            for chat in st.session_state.chat_log
+        ]
+    else:
+        past_msg = []
+    # セッションにチャットログを追加
+    st.session_state.chat_log.append({"name": USER_NAME, "msg": user_msg})
+    error_flag = False
+    try:
         # 入力メッセージのトークン数を計算
         user_msg_tokens = calc_token_tiktoken(
             str([{"role": "user", "content": user_msg}])
         )
         logging.debug(f"入力メッセージのトークン数: {user_msg_tokens}")
         if user_msg_tokens > PAST_INPUT_MAX_TOKENS:
-            st.text_area("入力メッセージ", user_msg, height=100)  # メッセージを再表示
-            st.warning("メッセージが長すぎます。短くしてください。" f"({user_msg_tokens}tokens)")
-        else:
-            # 最新のメッセージを表示
-            with st.chat_message(USER_NAME):
-                st.write(user_msg)
+            # st.text_area("入力メッセージ", user_msg, height=100)  # メッセージを再表示
+            # st.warning("メッセージが長すぎます。短くしてください。" f"({user_msg_tokens}tokens)")
+            raise Exception("メッセージが長すぎます。短くしてください。" f"({user_msg_tokens}tokens)")
+        response = response_chatgpt(user_msg, past_msgs)
+    except Exception as e:
+        error_flag = True
+        st.warning(e)
+        st.session_state.chat_log = st.session_state.chat_log[:-1]
+    if not error_flag:
+        st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": ""})
+        with st.chat_message(ASSISTANT_NAME):
+            assistant_msg = ""
+            assistant_response_area = st.empty()
+            for chunk in response:
+                # 回答を逐次表示
+                tmp_assistant_msg = chunk["choices"][0]["delta"].get("content", "")
+                assistant_msg += tmp_assistant_msg
+                st.session_state.chat_log[-1]["msg"] = assistant_msg
+                assistant_response_area.write(assistant_msg)
 
-            # 過去のメッセージを使用するかどうかの条件に基づいて、過去のメッセージのリストを作成
-            if use_past_data:
-                past_msgs = [
-                    {"role": chat["name"], "content": chat["msg"]}
-                    for chat in st.session_state.chat_log
-                ]
-            else:
-                past_msg = []
-            # セッションにチャットログを追加
-            st.session_state.chat_log.append({"name": USER_NAME, "msg": user_msg})
-            st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": ""})
-            response = response_chatgpt(user_msg, past_msgs)
-            with st.chat_message(ASSISTANT_NAME):
-                assistant_msg = ""
-                assistant_response_area = st.empty()
-                for chunk in response:
-                    # 回答を逐次表示
-                    tmp_assistant_msg = chunk["choices"][0]["delta"].get("content", "")
-                    assistant_msg += tmp_assistant_msg
-                    st.session_state.chat_log[-1]["msg"] = assistant_msg
-                    assistant_response_area.write(assistant_msg)
+        logging.debug(f"チャットログ: {st.session_state.chat_log}")
 
-            logging.debug(f"チャットログ: {st.session_state.chat_log}")
-
-            # 処理終了
+    # 処理終了
 
 # %%
